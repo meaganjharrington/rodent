@@ -1,10 +1,22 @@
-run_sir_step <- function(N = 1000,
-                         I0 = 10,
-                         gamma = 0.1,
-                         beta1 = 0.4,
-                         beta2 = 0.1,
-                         change_time = 50,
-                         times = seq(0, 100, by = 1)) {
+#' Simulate SIR Model with Single Time-Varying Transmission Rate
+#'
+#' @param N Total population size
+#' @param I0 Initial number of infected individuals
+#' @param gamma Recovery rate (1/infectious period)
+#' @param beta1 Transmission rate before change point
+#' @param beta2 Transmission rate after change point
+#' @param change_time Time point when transmission rate changes
+#' @param times Vector of times at which to return output (default: 0 to 100 by 1)
+#'
+#' @return A list containing:
+#'   \item{times}{Time points}
+#'   \item{S}{Susceptible counts over time}
+#'   \item{I}{Infected counts over time}
+#'   \item{R}{Recovered counts over time}
+#'   \item{beta}{Transmission rate over time}
+#'   \item{parameters}{List of parameters used}
+
+run_sir_step <- function(N, I0, gamma, beta1, beta2, change_time, times=seq(0,100, by=1)){
 
   # Validate inputs
   if (N <= 0) stop("N must be positive")
@@ -24,21 +36,26 @@ run_sir_step <- function(N = 1000,
     initial(I) <- I0
     initial(R) <- 0
 
-    N           <- parameter(1000)
-    I0          <- parameter(10)
+    N           <- parameter()
+    I0          <- parameter()
     beta        <- if (time < change_time) beta1 else beta2
-    beta1       <- parameter(0.4)
-    beta2       <- parameter(0.1)
-    change_time <- parameter(50)
-    gamma       <- parameter(0.1)
+    beta1       <- parameter()
+    beta2       <- parameter()
+    change_time <- parameter()
+    gamma       <- parameter()
   })
 
-  sir
-  pars <- list()
+  pars <- list(
+    N = N,
+    I0 = I0,
+    beta1 = beta1,
+    beta2 = beta2,
+    change_time = change_time,
+    gamma = gamma
+  )
 
   # create dust2 system
   sys <- dust2::dust_system_create(sir, pars)
-  sys
 
   dust2::dust_system_set_state_initial(sys)
 
