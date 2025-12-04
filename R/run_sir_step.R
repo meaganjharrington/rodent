@@ -1,3 +1,23 @@
+<<<<<<< HEAD
+=======
+#' Simulate SIR Model with Single Time-Varying Transmission Rate
+#'
+#' @param N Total population size
+#' @param I0 Initial number of infected individuals
+#' @param gamma Recovery rate (1/infectious period)
+#' @param beta1 Transmission rate before change point
+#' @param beta2 Transmission rate after change point
+#' @param change_time Time point when transmission rate changes
+#' @param times Vector of times at which to return output (default: 0 to 100 by 1)
+#'
+#' @return A list containing:
+#'   \item{times}{Time points}
+#'   \item{S}{Susceptible counts over time}
+#'   \item{I}{Infected counts over time}
+#'   \item{R}{Recovered counts over time}
+#'   \item{beta}{Transmission rate over time}
+#'   \item{parameters}{List of parameters used}
+>>>>>>> e84c8975ebe708ca38358ee426c78ae21a8b7772
 
 run_sir_step <- function(N, I0, gamma, beta1, beta2, change_time, times=seq(0,100, by=1)){
 
