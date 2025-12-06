@@ -3,11 +3,7 @@
 #' @param N Total population size
 #' @param I0 Initial number of infected individuals
 #' @param gamma Recovery rate (1/infectious period)
-#' @param beta1 Transmission rate before change point
-#' @param beta2 Transmission rate after change point
-#' @param change_time Change point of transmission rate
-#' @param times Vector of times at which to return output (default: 0 to 100 by 1)
-#'
+#' @param beta Transmission rate before change point
 #' @return A list containing:
 #'   \item{times}{Time points}
 #'   \item{S}{Susceptible counts over time}
@@ -17,7 +13,7 @@
 #'   \item{parameters}{List of parameters used}
 #'
 #' @export
-sir_onestep <- function(N, I0, gamma, beta1, beta2, change_time, end_time){
+sir_nostep <- function(N, I0, gamma, beta, end_time){
 
   # Create time vector
   times <- seq(0, end_time, by = 1)
@@ -26,7 +22,7 @@ sir_onestep <- function(N, I0, gamma, beta1, beta2, change_time, end_time){
   if (N <= 0) stop("N must be positive")
   if (I0 <= 0 || I0 >= N) stop("I0 must be positive and less than N")
   if (gamma <= 0) stop("gamma must be positive")
-  if (beta1 <= 0 || beta2 <= 0) stop("beta1 and beta2 must be positive")
+  if (beta <= 0) stop("beta must be positive")
   if (change_time < min(times)) stop("change_time must be within time range")
 
   # Define the SIR model
@@ -41,9 +37,7 @@ sir_onestep <- function(N, I0, gamma, beta1, beta2, change_time, end_time){
 
     N           <- parameter()
     I0          <- parameter()
-    beta        <- if (time < change_time) beta1 else beta2
-    beta1       <- parameter()
-    beta2       <- parameter()
+    beta        <- parameter()
     change_time <- parameter()
     gamma       <- parameter()
   })
@@ -51,8 +45,7 @@ sir_onestep <- function(N, I0, gamma, beta1, beta2, change_time, end_time){
   pars <- list(
     N = N,
     I0 = I0,
-    beta1 = beta1,
-    beta2 = beta2,
+    beta = beta,
     change_time = change_time,
     gamma = gamma
   )
@@ -70,9 +63,6 @@ sir_onestep <- function(N, I0, gamma, beta1, beta2, change_time, end_time){
   I_vals <- result[2, ]
   R_vals <- result[3, ]
 
-  # Calculate beta at each time point for plotting
-  beta_vals <- ifelse(times < change_time, beta1, beta2)
-
   # Create output object
   output <- list(
     times = times,
@@ -84,8 +74,7 @@ sir_onestep <- function(N, I0, gamma, beta1, beta2, change_time, end_time){
       N = N,
       I0 = I0,
       gamma = gamma,
-      beta1 = beta1,
-      beta2 = beta2,
+      beta = beta,
       change_time = change_time
     )
   )
