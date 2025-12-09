@@ -14,6 +14,8 @@ sir_nostep(N, I0, gamma, beta, end_time)
 \item{gamma}{Recovery rate (1/infectious period)}
 
 \item{beta}{Transmission rate before change point}
+
+\item{end_time}{End time of simulation period}
 }
 \value{
 A list containing:

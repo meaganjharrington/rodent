@@ -19,6 +19,8 @@ sir_onestep(N, I0, gamma, beta1, beta2, change_time, end_time)
 
 \item{change_time}{Change point of transmission rate}
 
+\item{end_time}{End time of simulation period}
+
 \item{times}{Vector of times at which to return output (default: 0 to 100 by 1)}
 }
 \value{

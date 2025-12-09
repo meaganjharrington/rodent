@@ -6,6 +6,7 @@
 #' @param beta1 Transmission rate before change point
 #' @param beta2 Transmission rate after change point
 #' @param change_time Change point of transmission rate
+#' @param end_time End time of simulation period
 #' @param times Vector of times at which to return output (default: 0 to 100 by 1)
 #'
 #' @return A list containing:

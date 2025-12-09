@@ -4,6 +4,7 @@
 #' @param I0 Initial number of infected individuals
 #' @param gamma Recovery rate (1/infectious period)
 #' @param beta Transmission rate before change point
+#' @param end_time End time of simulation period
 #' @return A list containing:
 #'   \item{times}{Time points}
 #'   \item{S}{Susceptible counts over time}
