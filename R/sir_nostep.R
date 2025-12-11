@@ -24,7 +24,6 @@ sir_nostep <- function(N, I0, gamma, beta, end_time){
   if (I0 <= 0 || I0 >= N) stop("I0 must be positive and less than N")
   if (gamma <= 0) stop("gamma must be positive")
   if (beta <= 0) stop("beta must be positive")
-  if (change_time < min(times)) stop("change_time must be within time range")
 
   # Define the SIR model
   sir <- odin2::odin({
@@ -39,7 +38,6 @@ sir_nostep <- function(N, I0, gamma, beta, end_time){
     N           <- parameter()
     I0          <- parameter()
     beta        <- parameter()
-    change_time <- parameter()
     gamma       <- parameter()
   })
 
@@ -47,7 +45,6 @@ sir_nostep <- function(N, I0, gamma, beta, end_time){
     N = N,
     I0 = I0,
     beta = beta,
-    change_time = change_time,
     gamma = gamma
   )
 
@@ -70,13 +67,12 @@ sir_nostep <- function(N, I0, gamma, beta, end_time){
     S = S_vals,
     I = I_vals,
     R = R_vals,
-    beta = beta_vals,
+    beta = beta,
     parameters = list(
       N = N,
       I0 = I0,
       gamma = gamma,
-      beta = beta,
-      change_time = change_time
+      beta = beta
     )
   )
 
