@@ -22,3 +22,4 @@ sir <- odin({
   cases <- data()
   cases ~ Poisson(incidence)
 })
+
