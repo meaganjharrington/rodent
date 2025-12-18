@@ -1,4 +1,3 @@
-
 #' Simple one-chain MH for constant-beta SIR: estimate beta and I0
 #'
 #' Component-wise Metropolis–Hastings random walk on log(beta) and log(I0).
