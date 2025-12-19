@@ -31,7 +31,7 @@ estimate_rt_constant_ml <- function(incidence, N, gamma = 1/7,
   # odin2 generator (must define inc_step; make_sir_generator() in your package)
   gen <- make_sir_generator()
 
-  # ---- Pure Poisson likelihood (NO PRIOR) ----
+  # Pure Poisson likelihood (NO PRIOR, see estimate_rt_simple for function with priors)
   loglik <- function(beta) {
     if (!is.finite(beta) || beta <= 0) return(-Inf)
 
@@ -72,7 +72,7 @@ estimate_rt_constant_ml <- function(incidence, N, gamma = 1/7,
   beta_med <- stats::median(beta_samples)
   R0_med   <- stats::median(R0_samples)
 
-  # ---- Rt(t) curve at posterior-median beta ----
+  # Rt(t) curve at posterior-median beta
   sys_med <- dust2::dust_system_create(
     gen(),
     pars = list(N = N, I0 = I0, gamma = gamma, beta = beta_med),

@@ -1,5 +1,5 @@
 
-#' Estimate Rt(t) from daily cases via odin2/dust2/monty (constant beta, Poisson)
+#' Estimate Rt(t) from daily cases with odin2/dust2/monty
 #'
 #' @param incidence data.frame with columns 'time' (integer days) and 'cases' (counts)
 #' @param N population size (scalar)
@@ -82,7 +82,7 @@ estimate_rt_constant <- function(incidence, N, gamma = 1/7,
   beta_med <- stats::median(beta_samples)
   R0_med   <- stats::median(R0_samples)
 
-  # ---- Rt(t) curve from posterior-median beta (simple clean output) ----
+  # Rt(t) curve from posterior-median beta (simple output?)
   sys_med <- dust2::dust_system_create(
     gen(),
     pars = list(N = N, I0 = I0, gamma = gamma, beta = beta_med),
@@ -94,7 +94,7 @@ estimate_rt_constant <- function(incidence, N, gamma = 1/7,
   S_t <- as.numeric(res_med[1, ])                  # susceptible trajectory
   Rt  <- (beta_med * S_t) / (gamma * N)           # Rt(t) = beta * S / (gamma * N)
 
-  # ---- Return (still minimal) ----
+  # Return
   list(
     samples = data.frame(beta = beta_samples, R0 = R0_samples),
     estimates = data.frame(
