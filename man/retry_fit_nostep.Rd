@@ -2,66 +2,65 @@
 % Please edit documentation in R/retry_fit_nostep.R
 \name{retry_fit_nostep}
 \alias{retry_fit_nostep}
-\title{Simple one-chain MH for constant-beta SIR: estimate beta and I0}
+\title{Fit Constant-Beta SIR Model to Incidence Data (Deterministic Likelihood)}
 \usage{
 retry_fit_nostep(
-  cases,
+  incidence_data,
   N,
-  gamma = 0.14,
   I0 = NULL,
+  gamma = 0.1,
+  estimate_gamma = FALSE,
+  beta_prior_mean = 0.3,
+  beta_prior_sd = 0.2,
+  gamma_prior_mean = 0.1,
+  gamma_prior_sd = 0.05,
   use_negbin = TRUE,
   nb_size = 10,
-  n_steps = 4000,
-  burnin_frac = 0.5,
-  proposal_sd_logbeta = 0.03,
-  proposal_sd_logI0 = 0.1,
-  prior_meanlog_beta = log(0.3),
-  prior_sdlog_beta = 0.5,
-  I0_prior_mean = NULL,
-  I0_prior_sdlog = 0.7,
-  n_ppc = 200,
-  seed = NULL
+  rho = 1,
+  n_steps = 2000,
+  n_chains = 3,
+  n_burnin = NULL,
+  n_ppc = 200
 )
 }
 \arguments{
-\item{cases}{Numeric vector of non-negative counts (length T).}
+\item{incidence_data}{Data frame with columns 'time' and 'cases'}
 
-\item{N}{Total population size (scalar).}
+\item{N}{Total population size}
 
-\item{gamma}{Recovery rate per time step (e.g., ~0.14 per day).}
+\item{I0}{Initial infections (default: inferred from early cases)}
 
-\item{I0}{Optional initial infections (prevalence). If NULL (default),
-we set a prior mean I0_prior_mean = mean(early cases) * (1/gamma).}
+\item{gamma}{Fixed recovery rate (ignored if estimate_gamma=TRUE)}
 
-\item{use_negbin}{Logical; if TRUE (default) use NegBin(size=nb_size), else Poisson.}
+\item{estimate_gamma}{Logical: estimate gamma? (default FALSE)}
 
-\item{nb_size}{NegBin size (dispersion); larger => less overdispersion (default 10).}
+\item{beta_prior_mean}{Prior mean for beta (Normal)}
 
-\item{n_steps}{Total MH iterations (default 4000).}
+\item{beta_prior_sd}{Prior SD for beta (Normal)}
 
-\item{burnin_frac}{Fraction to discard as burn-in (default 0.5).}
+\item{gamma_prior_mean}{Prior mean for gamma (Normal, if estimated)}
 
-\item{proposal_sd_logbeta}{RW proposal SD on log(beta) (default 0.03–0.05 often good).}
+\item{gamma_prior_sd}{Prior SD for gamma (Normal, if estimated)}
 
-\item{proposal_sd_logI0}{RW proposal SD on log(I0) (default 0.10).}
+\item{use_negbin}{Logical: use Negative Binomial instead of Poisson? (default TRUE)}
 
-\item{prior_meanlog_beta}{Prior mean of log(beta) (default log(0.30)).}
+\item{nb_size}{Dispersion (size) for NB (fixed; larger = less overdispersion). Default 10.}
 
-\item{prior_sdlog_beta}{Prior SD   of log(beta) (default 0.50).}
+\item{rho}{Reporting rate (fraction observed, default 1.0; fixed)}
 
-\item{I0_prior_mean}{Optional prior mean for I0 (scalar). If NULL, computed from data.}
+\item{n_steps}{MCMC iterations per chain (default 2000)}
 
-\item{I0_prior_sdlog}{Prior SD of log(I0) (default 0.70; fairly diffuse).}
+\item{n_chains}{Number of chains (default 3)}
 
-\item{n_ppc}{Posterior draws for PPC/R(t) bands (default 200).}
+\item{n_burnin}{Burn-in iterations (default n_steps/2)}
 
-\item{seed}{Optional RNG seed for reproducibility (default NULL).}
+\item{n_ppc}{Number of posterior predictive draws (default 200)}
 }
 \value{
-List with samples (beta, I0, R0), estimates, R_t bands, fitted_incidence, diagnostics.
+A list of class 'epievolve_fit' with: samples, estimates, R_t, fitted_incidence, mcmc_info, fixed_parameters
 }
 \description{
-Component-wise Metropolis–Hastings random walk on log(beta) and log(I0).
-Gamma is fixed. Uses a deterministic discrete-time SIR (dt = 1).
-Observation model: Negative Binomial (default) or Poisson.
+Estimates beta (and optionally gamma) via MCMC using a deterministic SIR and
+a Negative Binomial (default) or Poisson observation model. Returns posterior
+samples, summaries, R0, R(t) with credible intervals, and posterior predictive incidence.
 }

@@ -1,230 +1,328 @@
-#' Simple one-chain MH for constant-beta SIR: estimate beta and I0
+
+#' Fit Constant-Beta SIR Model to Incidence Data (Deterministic Likelihood)
 #'
-#' Component-wise Metropolis–Hastings random walk on log(beta) and log(I0).
-#' Gamma is fixed. Uses a deterministic discrete-time SIR (dt = 1).
-#' Observation model: Negative Binomial (default) or Poisson.
+#' Estimates beta (and optionally gamma) via MCMC using a deterministic SIR and
+#' a Negative Binomial (default) or Poisson observation model. Returns posterior
+#' samples, summaries, R0, R(t) with credible intervals, and posterior predictive incidence.
 #'
-#' @param cases Numeric vector of non-negative counts (length T).
-#' @param N Total population size (scalar).
-#' @param gamma Recovery rate per time step (e.g., ~0.14 per day).
-#' @param I0 Optional initial infections (prevalence). If NULL (default),
-#'   we set a prior mean I0_prior_mean = mean(early cases) * (1/gamma).
-#' @param use_negbin Logical; if TRUE (default) use NegBin(size=nb_size), else Poisson.
-#' @param nb_size NegBin size (dispersion); larger => less overdispersion (default 10).
-#' @param n_steps Total MH iterations (default 4000).
-#' @param burnin_frac Fraction to discard as burn-in (default 0.5).
-#' @param proposal_sd_logbeta RW proposal SD on log(beta) (default 0.03–0.05 often good).
-#' @param proposal_sd_logI0 RW proposal SD on log(I0) (default 0.10).
-#' @param prior_meanlog_beta Prior mean of log(beta) (default log(0.30)).
-#' @param prior_sdlog_beta   Prior SD   of log(beta) (default 0.50).
-#' @param I0_prior_mean Optional prior mean for I0 (scalar). If NULL, computed from data.
-#' @param I0_prior_sdlog Prior SD of log(I0) (default 0.70; fairly diffuse).
-#' @param n_ppc Posterior draws for PPC/R(t) bands (default 200).
-#' @param seed Optional RNG seed for reproducibility (default NULL).
-#' @return List with samples (beta, I0, R0), estimates, R_t bands, fitted_incidence, diagnostics.
-#' @export
-retry_fit_nostep <- function(cases,
-                             N,
-                             gamma = 0.14,
-                             I0 = NULL,
-                             use_negbin = TRUE,
-                             nb_size = 10,
-                             n_steps = 4000,
-                             burnin_frac = 0.5,
-                             proposal_sd_logbeta = 0.03,
-                             proposal_sd_logI0 = 0.10,
-                             prior_meanlog_beta = log(0.30),
-                             prior_sdlog_beta = 0.50,
-                             I0_prior_mean = NULL,
-                             I0_prior_sdlog = 0.70,
-                             n_ppc = 200,
-                             seed = NULL) {
+#' @param incidence_data Data frame with columns 'time' and 'cases'
+#' @param N Total population size
+#' @param I0 Initial infections (default: inferred from early cases)
+#' @param gamma Fixed recovery rate (ignored if estimate_gamma=TRUE)
+#' @param estimate_gamma Logical: estimate gamma? (default FALSE)
+#' @param beta_prior_mean Prior mean for beta (Normal)
+#' @param beta_prior_sd Prior SD for beta (Normal)
+#' @param gamma_prior_mean Prior mean for gamma (Normal, if estimated)
+#' @param gamma_prior_sd Prior SD for gamma (Normal, if estimated)
+#' @param use_negbin Logical: use Negative Binomial instead of Poisson? (default TRUE)
+#' @param nb_size Dispersion (size) for NB (fixed; larger = less overdispersion). Default 10.
+#' @param rho Reporting rate (fraction observed, default 1.0; fixed)
+#' @param n_steps MCMC iterations per chain (default 2000)
+#' @param n_chains Number of chains (default 3)
+#' @param n_burnin Burn-in iterations (default n_steps/2)
+#' @param n_ppc Number of posterior predictive draws (default 200)
+#' @return A list of class 'epievolve_fit' with: samples, estimates, R_t, fitted_incidence, mcmc_info, fixed_parameters
+retry_fit_nostep <- function(incidence_data,
+                           N,
+                           I0 = NULL,
+                           gamma = 0.1,
+                           estimate_gamma = FALSE,
+                           beta_prior_mean = 0.3,
+                           beta_prior_sd = 0.2,
+                           gamma_prior_mean = 0.1,
+                           gamma_prior_sd = 0.05,
+                           use_negbin = TRUE,
+                           nb_size = 10,
+                           rho = 1.0,
+                           n_steps = 2000,
+                           n_chains = 3,
+                           n_burnin = NULL,
+                           n_ppc = 200) {
 
-  # ---- Validate inputs ----
-  stopifnot(is.numeric(cases), all(is.finite(cases)), all(cases >= 0),
-            length(N) == 1, N > 0, length(gamma) == 1, gamma > 0,
-            length(nb_size) == 1, nb_size > 0,
-            burnin_frac > 0, burnin_frac < 1,
-            n_steps >= 1000)
-
-  if (!is.null(seed)) set.seed(seed)
-
-  Tn <- length(cases)
-  times <- seq_len(Tn) - 1L
-
-  # ---- Prior mean for I0 if not provided ----
-  if (is.null(I0_prior_mean)) {
-    early_mean <- mean(cases[seq_len(min(5, Tn))])
-    I0_prior_mean <- max(1, round(early_mean * (1 / gamma)))
+  # --- 0) Validate and prepare data ---
+  if (!all(c("time", "cases") %in% names(incidence_data))) {
+    stop("incidence_data must have 'time' and 'cases' columns")
   }
-  # If user gave I0 (fixed), initialise near it; otherwise we estimate it.
-  # We will *always* estimate I0 here (as requested); I0 is only used to set initialisation.
-  if (is.null(I0)) I0 <- I0_prior_mean
+  cases <- as.numeric(incidence_data$cases)
 
-  # Clamp to sensible bounds
-  I0 <- min(max(I0, 1), N - 1)
+  # Force times to 0,1,2,... to match dust step indexing
+  times <- seq.int(0L, length(cases) - 1L)
 
-  S0_from_I0 <- function(I0_val) {
-    s <- N - I0_val
-    if (!is.finite(s) || s <= 0) s <- 1e-6
-    s
+  # Infer I0 from early cases if not provided
+  if (is.null(I0)) {
+    I0 <- max(1, round(mean(cases[seq_len(min(5, length(cases)))])))
   }
 
-  # ---- Deterministic SIR simulator (dt = 1) ----
-  sim_sir_daily <- function(beta, I0_val) {
-    S <- numeric(Tn); I <- numeric(Tn); R <- numeric(Tn); inc <- numeric(Tn)
-    S[1] <- S0_from_I0(I0_val); I[1] <- I0_val; R[1] <- 0
-    inc[1] <- beta * S[1] * I[1] / N
-    for (t in 2:Tn) {
-      new_inf <- beta * S[t-1] * I[t-1] / N
-      recov   <- gamma * I[t-1]
-      S[t] <- S[t-1] - new_inf
-      I[t] <- I[t-1] + new_inf - recov
-      R[t] <- R[t-1] + recov
-      inc[t] <- max(new_inf, 0)
+  if (is.null(n_burnin)) {
+    n_burnin <- floor(n_steps / 2)
+  }
+
+  # --- 1) Define the SIR model via odin2 ---
+  sir <- odin2::odin({
+    deriv(S) <- -beta * S * I / N
+    deriv(I) <- beta * S * I / N - gamma * I
+    deriv(R) <- gamma * I
+    deriv(Inc) <- beta * S * I / N  # cumulative incidence derivative
+
+    initial(S) <- N - I0
+    initial(I) <- I0
+    initial(R) <- 0
+    initial(Inc) <- 0
+
+    N <- parameter()
+    I0 <- parameter()
+    beta <- parameter()
+    gamma <- parameter()
+  })
+
+  # --- 2) Which parameters to estimate ---
+  if (estimate_gamma) {
+    packer <- monty::monty_packer(c("beta", "gamma"))
+    param_names <- c("beta", "gamma")
+  } else {
+    packer <- monty::monty_packer("beta", fixed = list(gamma = gamma))
+    param_names <- "beta"
+  }
+
+  # --- 3) Likelihood (Poisson or NegBin observation model) ---
+  likelihood_fn <- function(pars) {
+    # Unpack parameters into full list (includes fixed gamma when not estimated)
+    p <- packer$unpack(pars)
+    beta_val  <- p$beta
+    gamma_val <- p$gamma
+
+    # Bounds: strictly positive rates
+    if (beta_val <= 0 || gamma_val <= 0 || nb_size <= 0 || rho <= 0 || rho > 1) {
+      return(-Inf)
     }
-    list(S = S, I = I, R = R, inc = pmax(inc, 1e-8))
-  }
 
-  # ---- Log-likelihood ----
-  loglik <- function(beta, I0_val) {
-    # basic bounds
-    if (!is.finite(beta) || beta <= 0) return(-Inf)
-    if (!is.finite(I0_val) || I0_val <= 0 || I0_val >= N) return(-Inf)
-    sim <- sim_sir_daily(beta, I0_val)
-    lambda <- sim$inc
+    # Run deterministic SIR
+    sys <- dust2::dust_system_create(
+      sir,
+      list(N = N, I0 = I0, beta = beta_val, gamma = gamma_val),
+      n_particles = 1,
+      deterministic = TRUE
+    )
+    dust2::dust_system_set_state_initial(sys)
+    result <- dust2::dust_system_simulate(sys, times)
+
+    # States: 1=S, 2=I, 3=R, 4=Inc (cumulative)
+    cum_inc <- result[4, ]
+    daily_inc_true <- c(cum_inc[1], diff(cum_inc))
+
+    # Reporting fraction
+    lambda <- pmax(daily_inc_true * rho, 1e-6)
+
+    # Observation density
     if (use_negbin) {
-      sum(stats::dnbinom(cases, size = nb_size, mu = lambda, log = TRUE))
+      # NB parameterization with size and mu; Var = mu + mu^2/size
+      ll <- sum(stats::dnbinom(x = cases, size = nb_size, mu = lambda, log = TRUE))
     } else {
-      sum(stats::dpois(cases, lambda = lambda, log = TRUE))
+      ll <- sum(stats::dpois(x = cases, lambda = lambda, log = TRUE))
     }
+    ll
   }
 
-  # ---- Log-priors ----
-  logprior_beta  <- function(logbeta) stats::dnorm(logbeta, mean = prior_meanlog_beta, sd = prior_sdlog_beta, log = TRUE)
-  logprior_logI0 <- function(logI0)   stats::dnorm(logI0,   mean = log(I0_prior_mean),  sd = I0_prior_sdlog,    log = TRUE)
+  # --- 4) Wrap the likelihood function as a monty model ---
 
-  # ---- Initial values (log-scale) ----
-  logbeta <- numeric(n_steps); logI0 <- numeric(n_steps)
-  logbeta[1] <- prior_meanlog_beta
-  logI0[1]   <- log(I0)
+  likelihood <- monty::monty_model(list(
+    density    = likelihood_fn,    # function(pars) -> log-density
+    parameters = param_names,      # e.g., "beta" or c("beta","gamma")
+    domain     = NULL              # full real line
+  ))
 
-  # Compute initial log-posterior
-  curr_beta <- exp(logbeta[1]); curr_I0 <- exp(logI0[1])
-  curr_logpost <- loglik(curr_beta, curr_I0) + logprior_beta(logbeta[1]) + logprior_logI0(logI0[1])
 
-  # ---- MH loop (component-wise: beta then I0 each iteration) ----
-  acc_beta <- logical(n_steps - 1L)
-  acc_I0   <- logical(n_steps - 1L)
+  # --- 5) Priors (Normal on beta/gamma) ---
 
-  for (i in 2:n_steps) {
-    # 1) Propose log(beta)
-    prop_logbeta <- logbeta[i - 1] + stats::rnorm(1, 0, proposal_sd_logbeta)
-    prop_beta    <- exp(prop_logbeta)
-    prop_logpost_beta <- loglik(prop_beta, curr_I0) + logprior_beta(prop_logbeta) + logprior_logI0(logI0[i - 1])
-    a_beta <- prop_logpost_beta - curr_logpost
-    if (log(stats::runif(1)) < a_beta) {
-      logbeta[i]   <- prop_logbeta
-      curr_beta    <- prop_beta
-      curr_logpost <- prop_logpost_beta
-      acc_beta[i - 1] <- TRUE
-    } else {
-      logbeta[i] <- logbeta[i - 1]
-      acc_beta[i - 1] <- FALSE
-    }
-
-    # 2) Propose log(I0)
-    prop_logI0 <- logI0[i - 1] + stats::rnorm(1, 0, proposal_sd_logI0)
-    prop_I0    <- exp(prop_logI0)
-    prop_logpost_I0 <- loglik(curr_beta, prop_I0) + logprior_beta(logbeta[i]) + logprior_logI0(prop_logI0)
-    a_I0 <- prop_logpost_I0 - curr_logpost
-    if (log(stats::runif(1)) < a_I0) {
-      logI0[i]     <- prop_logI0
-      curr_I0      <- prop_I0
-      curr_logpost <- prop_logpost_I0
-      acc_I0[i - 1] <- TRUE
-    } else {
-      logI0[i] <- logI0[i - 1]
-      acc_I0[i - 1] <- FALSE
-    }
+  # --- 5) Priors (Normal on beta/gamma) ---
+  if (estimate_gamma) {
+    prior <- monty::monty_dsl({
+      beta_mu <- !!beta_prior_mean
+      beta_sd <- !!beta_prior_sd
+      gamma_mu <- !!gamma_prior_mean
+      gamma_sd <- !!gamma_prior_sd
+      beta  ~ Normal(mean = beta_mu,  sd = beta_sd)
+      gamma ~ Normal(mean = gamma_mu, sd = gamma_sd)
+    })
+  } else {
+    prior <- monty::monty_dsl({
+      beta_mu <- !!beta_prior_mean
+      beta_sd <- !!beta_prior_sd
+      beta ~ Normal(mean = beta_mu, sd = beta_sd)
+    })
   }
 
-  # ---- Post-burn-in ----
-  n_burnin <- floor(burnin_frac * n_steps)
-  keep <- (n_burnin + 1):n_steps
-  logbeta_post <- logbeta[keep]
-  logI0_post   <- logI0[keep]
 
-  beta_post <- exp(logbeta_post)
-  I0_post   <- exp(logI0_post)
-  R0_post   <- beta_post / gamma
+  # Combine into posterior
+  posterior <- likelihood + prior
 
-  # ---- Summaries ----
-  q <- function(x) stats::quantile(x, c(0.025, 0.5, 0.975), names = FALSE)
-  summ <- rbind(
-    data.frame(parameter = "beta", lower = q(beta_post)[1], median = q(beta_post)[2], upper = q(beta_post)[3]),
-    data.frame(parameter = "I0",   lower = q(I0_post)[1],   median = q(I0_post)[2],   upper = q(I0_post)[3]),
-    data.frame(parameter = "R0",   lower = q(R0_post)[1],   median = q(R0_post)[2],   upper = q(R0_post)[3])
+  # --- 6) Sampler setup (random-walk proposal) ---
+  vcv <- diag(length(param_names))
+  diag(vcv) <- 0.01  # tune if needed
+  sampler <- monty::monty_sampler_random_walk(vcv = vcv)
+
+  # Initial vector in parameter order
+  initial <- if (estimate_gamma) c(beta_prior_mean, gamma_prior_mean) else beta_prior_mean
+
+  # --- 7) Run MCMC ---
+  samples_raw <- monty::monty_sample(
+    posterior,
+    sampler,
+    n_steps,
+    initial = initial,
+    n_chains = n_chains
   )
 
-  # ---- Fitted trajectory at posterior medians ----
-  beta_med <- stats::median(beta_post)
-  I0_med   <- stats::median(I0_post)
-  sim_med  <- sim_sir_daily(beta_med, I0_med)
-  Rt_med   <- beta_med * sim_med$S / (gamma * N)
+  # --- 8) Extract post-burnin samples as vectors ---
+  keep <- (n_burnin + 1):n_steps
+  arr <- samples_raw$pars[, , keep, drop = FALSE] # [param, chain, iter]
+  if (estimate_gamma) {
+    beta_samples  <- as.vector(arr[1, , ])
+    gamma_samples <- as.vector(arr[2, , ])
+  } else {
+    beta_samples  <- as.vector(arr[1, , ])
+    gamma_samples <- rep(gamma, length(beta_samples))
+  }
+  R0_samples <- beta_samples / gamma_samples
 
-  # ---- R(t) and PPC bands from posterior draws ----
-  nd <- min(n_ppc, length(beta_post))
-  idx <- sample.int(length(beta_post), nd)
-
-  Rt_mat <- matrix(NA_real_, nd, Tn)
-  inc_mat_det <- matrix(NA_real_, nd, Tn) # deterministic means
-  for (j in seq_len(nd)) {
-    b <- beta_post[idx[j]]
-    i0 <- I0_post[idx[j]]
-    simj <- sim_sir_daily(b, i0)
-    Rt_mat[j, ]      <- (b * simj$S) / (gamma * N)
-    inc_mat_det[j, ] <- simj$inc
+  # --- 9) Posterior summaries ---
+  if (estimate_gamma) {
+    estimates <- data.frame(
+      parameter = c("beta", "gamma", "R0"),
+      median = c(stats::median(beta_samples), stats::median(gamma_samples), stats::median(R0_samples)),
+      mean   = c(mean(beta_samples), mean(gamma_samples), mean(R0_samples)),
+      sd     = c(stats::sd(beta_samples), stats::sd(gamma_samples), stats::sd(R0_samples)),
+      lower_95 = c(stats::quantile(beta_samples, 0.025),
+                   stats::quantile(gamma_samples, 0.025),
+                   stats::quantile(R0_samples, 0.025)),
+      upper_95 = c(stats::quantile(beta_samples, 0.975),
+                   stats::quantile(gamma_samples, 0.975),
+                   stats::quantile(R0_samples, 0.975))
+    )
+  } else {
+    estimates <- data.frame(
+      parameter = c("beta", "R0"),
+      median = c(stats::median(beta_samples), stats::median(R0_samples)),
+      mean   = c(mean(beta_samples), mean(R0_samples)),
+      sd     = c(stats::sd(beta_samples), stats::sd(R0_samples)),
+      lower_95 = c(stats::quantile(beta_samples, 0.025), stats::quantile(R0_samples, 0.025)),
+      upper_95 = c(stats::quantile(beta_samples, 0.975), stats::quantile(R0_samples, 0.975))
+    )
   }
 
-  Rt_mean  <- colMeans(Rt_mat)
-  Rt_lower <- apply(Rt_mat, 2, stats::quantile, 0.025)
-  Rt_upper <- apply(Rt_mat, 2, stats::quantile, 0.975)
+  # --- 10) Deterministic fit using posterior medians ---
+  beta_med  <- stats::median(beta_samples)
+  gamma_med <- stats::median(gamma_samples)
 
-  # Posterior predictive counts (NB or Poisson)
-  pp_mat <- matrix(NA_real_, nd, Tn)
-  for (j in seq_len(nd)) {
-    mu <- pmax(inc_mat_det[j, ], 1e-8)
-    pp_mat[j, ] <- if (use_negbin) stats::rnbinom(Tn, mu = mu, size = nb_size) else stats::rpois(Tn, lambda = mu)
+  sys_fit <- dust2::dust_system_create(
+    sir,
+    list(N = N, I0 = I0, beta = beta_med, gamma = gamma_med),
+    n_particles = 1,
+    deterministic = TRUE
+  )
+  dust2::dust_system_set_state_initial(sys_fit)
+  result_fit <- dust2::dust_system_simulate(sys_fit, times)
+
+  S_t <- result_fit[1, ]
+  cum_inc_fit <- result_fit[4, ]
+  daily_inc_fit <- c(cum_inc_fit[1], diff(cum_inc_fit))
+
+  # --- 11) R(t) credible intervals via posterior-draw simulations ---
+  set.seed(1)
+  draws <- data.frame(beta = beta_samples, gamma = gamma_samples)
+  sel_idx <- sample(seq_len(nrow(draws)), size = min(n_ppc, nrow(draws)))
+  draws_sel <- draws[sel_idx, , drop = FALSE]
+
+  Rt_mat <- matrix(NA_real_, nrow = nrow(draws_sel), ncol = length(times))
+  St_mat <- matrix(NA_real_, nrow = nrow(draws_sel), ncol = length(times))
+
+  for (i in seq_len(nrow(draws_sel))) {
+    sys_i <- dust2::dust_system_create(
+      sir,
+      list(N = N, I0 = I0, beta = draws_sel$beta[i], gamma = draws_sel$gamma[i]),
+      n_particles = 1,
+      deterministic = TRUE
+    )
+    dust2::dust_system_set_state_initial(sys_i)
+    res_i <- dust2::dust_system_simulate(sys_i, times)
+    S_i <- res_i[1, ]
+    St_mat[i, ] <- S_i
+    Rt_mat[i, ] <- (draws_sel$beta[i] * S_i) / (draws_sel$gamma[i] * N)
   }
-  ppc_mean  <- colMeans(pp_mat)
-  ppc_lower <- apply(pp_mat, 1, stats::quantile, 0.025)
-  ppc_upper <- apply(pp_mat, 1, stats::quantile, 0.975)
 
-  # ---- Output ----
-  list(
-    samples = data.frame(beta = beta_post, I0 = I0_post, R0 = R0_post),
-    estimates = summ,
+  R_effective_mean <- colMeans(Rt_mat)
+  R_lower <- apply(Rt_mat, 2, stats::quantile, 0.025)
+  R_upper <- apply(Rt_mat, 2, stats::quantile, 0.975)
+  S_t_mean <- colMeans(St_mat)
+
+  # --- 12) Posterior predictive incidence bands (PPC) ---
+  pp_inc_mat <- matrix(NA_real_, nrow = length(times), ncol = nrow(draws_sel))
+  for (i in seq_len(nrow(draws_sel))) {
+    sys_i <- dust2::dust_system_create(
+      sir,
+      list(N = N, I0 = I0, beta = draws_sel$beta[i], gamma = draws_sel$gamma[i]),
+      n_particles = 1,
+      deterministic = TRUE
+    )
+    dust2::dust_system_set_state_initial(sys_i)
+    res_i <- dust2::dust_system_simulate(sys_i, times)
+    cum_inc_i <- res_i[4, ]
+    daily_true <- c(cum_inc_i[1], diff(cum_inc_i))
+    lambda_i <- pmax(daily_true * rho, 1e-6)
+    pp_inc_mat[, i] <- if (use_negbin) {
+      stats::rnbinom(n = length(lambda_i), mu = lambda_i, size = nb_size)
+    } else {
+      stats::rpois(n = length(lambda_i), lambda = lambda_i)
+    }
+  }
+  ppc_mean  <- rowMeans(pp_inc_mat)
+  ppc_lower <- apply(pp_inc_mat, 1, stats::quantile, 0.025)
+  ppc_upper <- apply(pp_inc_mat, 1, stats::quantile, 0.975)
+
+  # --- 13) Return assembled output ---
+  output <- list(
+    samples = if (estimate_gamma) {
+      data.frame(beta = beta_samples, gamma = gamma_samples, R0 = R0_samples)
+    } else {
+      data.frame(beta = beta_samples, R0 = R0_samples)
+    },
+
+    estimates = estimates,
+
     R_t = data.frame(
       time = times,
-      R_effective = Rt_mean, R_lower = Rt_lower, R_upper = Rt_upper,
-      R_effective_median_betaI0 = Rt_med
+      S = S_t_mean,                 # posterior-averaged S(t)
+      R_effective = R_effective_mean,
+      R_lower = R_lower,
+      R_upper = R_upper
     ),
+
     fitted_incidence = data.frame(
       time = times,
       observed = cases,
-      fitted = as.numeric(sim_med$inc),
-      ppc_mean = ppc_mean, ppc_lower = ppc_lower, ppc_upper = ppc_upper
+      fitted = daily_inc_fit,       # deterministic fit at posterior medians
+      ppc_mean = ppc_mean,
+      ppc_lower = ppc_lower,
+      ppc_upper = ppc_upper
     ),
-    diagnostics = list(
-      acceptance_beta = mean(acc_beta),
-      acceptance_I0   = mean(acc_I0),
-      n_steps = n_steps, burnin = n_burnin,
-      proposal_sd_logbeta = proposal_sd_logbeta,
-      proposal_sd_logI0   = proposal_sd_logI0,
-      use_negbin = use_negbin, nb_size = nb_size,
-      N = N, gamma = gamma,
-      I0_prior_mean = I0_prior_mean, I0_prior_sdlog = I0_prior_sdlog
+
+    mcmc_info = list(
+      n_steps = n_steps,
+      n_chains = n_chains,
+      n_burnin = n_burnin,
+      estimated_params = param_names
+    ),
+
+    fixed_parameters = list(
+      N = N,
+      I0 = I0,
+      gamma = if (!estimate_gamma) gamma else "estimated",
+      use_negbin = use_negbin,
+      nb_size = nb_size,
+      rho = rho
     )
   )
+
+  class(output) <- c("epievolve_fit", "list")
+  return(output)
 }
