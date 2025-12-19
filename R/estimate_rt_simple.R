@@ -17,7 +17,6 @@ estimate_rt_constant <- function(incidence, N, gamma = 1/7,
                                  prior_lp = NULL) {
   stopifnot(all(c("time", "cases") %in% names(incidence)))
 
-  # ---- Normalize time to 1..T so dust2 schedule is strictly increasing ----
   incidence <- as.data.frame(incidence)
   incidence$time <- seq_len(nrow(incidence))
   cases <- as.numeric(incidence$cases)
@@ -26,10 +25,10 @@ estimate_rt_constant <- function(incidence, N, gamma = 1/7,
   # Simple default for I0 from early cases
   I0 <- max(1, round(mean(head(cases, min(5, Tn))) * (1 / gamma)))
 
-  # ---- odin2 generator (must have inc_step + cases ~ Poisson(inc_step)) ----
+  # odin2 generator (inc_step + cases ~ Poisson(inc_step)
   gen <- make_sir_generator()
 
-  # ---- Manual log-posterior: Poisson likelihood + prior(beta) ----
+  # Poisson likelihood + prior(beta)
   logpost <- function(theta) {
     beta <- theta[["beta"]]
     if (!is.finite(beta) || beta <= 0) return(-Inf)
@@ -43,8 +42,8 @@ estimate_rt_constant <- function(incidence, N, gamma = 1/7,
     dust2::dust_system_set_state_initial(sys)
     res <- dust2::dust_system_simulate(sys, incidence$time)
 
-    inc_t  <- as.numeric(res[4, ])          # inc_step: per-step incidence
-    lambda <- pmax(inc_t, 1e-12)            # guard against zeros
+    inc_t  <- as.numeric(res[4, ])
+    lambda <- pmax(inc_t, 1e-12)
 
     # Poisson log-likelihood
     ll <- sum(stats::dpois(x = cases, lambda = lambda, log = TRUE))
@@ -60,7 +59,7 @@ estimate_rt_constant <- function(incidence, N, gamma = 1/7,
     ll + lp
   }
 
-  # ---- Wrap into a monty model and sample beta ----
+  # Wrap into a monty model and sample beta
   mod <- monty::monty_model(list(
     density    = function(theta_vec) logpost(list(beta = theta_vec[1])),
     parameters = "beta"
