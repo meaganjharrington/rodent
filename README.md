@@ -1,6 +1,26 @@
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
 # epievolve
-R package to fit time-varying transmission parameters in odin-monty
 
-# Install your package from GitHub
-devtools::install_github("https://github.com/meaganjharrington/epievolve")
+<!-- badges: start -->
 
+<!-- badges: end -->
+
+The goal of epievolve is to estimate time-varying Rt(t) using the
+odin-monty framework. Estimates Rt(t) from time series of case counts
+using a mechanistic SIR model. Enables interpretable inference on
+epidemic dynamics and intervention eff ects.
+
+## Installation
+
+You can install the development version of epievolve from
+[GitHub](https://github.com/) with:
+
+``` r
+# install.packages("pak")
+pak::pak("meaganjharrington/epievolve")
+```
+
+In that case, don’t forget to commit and push the resulting figure
+files, so they display on GitHub and CRAN.
