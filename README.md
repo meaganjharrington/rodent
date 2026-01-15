@@ -34,7 +34,7 @@ df$cases <- as.integer(df$cases)
 
 out <- final_estimate_Rt_step(
   incidence = df,
-  N = 1e6,
+  N = 1e4,
   gamma = 1/6,
   beta_breaks = c(1, 17, 35)
 )
