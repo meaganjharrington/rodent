@@ -5,7 +5,7 @@
 #'        Time can start at any integer, we keep it and set time_start to "first time - 1".
 #' @param N Numeric scalar > 0, population size
 #' @param gamma Numeric scalar > 0, fixed recovery rate
-#' # R Immunity existing in population, default = 0 - add back in once baseline immunity functionality added!
+#' R Immunity existing in population, default = 0 - add back in once baseline immunity functionality added!
 #' @param beta_breaks Integer vector in ORIGINAL time units; mapped to indices internally
 #' @param mcmc List: n_steps (6000), burnin (0.5), proposal (NULL -> diag(0.02^2)), seed (4),
 #'              n_rt_draws (300)
@@ -27,6 +27,8 @@ final_estimate_Rt_step <- function(
     inits  = list(beta = 0.3, I0 = 10) # initial values for MCMC
 ) {
 
+
+
   ## Validate main inputs - error messages
   stopifnot(is.data.frame(incidence), all(c("time","cases") %in% names(incidence))) # incidence should include time and case columns
   stopifnot(all(incidence$cases %% 1 == 0)) # cases as integer!
@@ -36,6 +38,14 @@ final_estimate_Rt_step <- function(
     stop("`incidence$time` must be consecutive integers.") # time series
   stopifnot(all(is.finite(time_vec)), all(is.finite(cases)), all(cases >= 0)) # all time and cases are finite (and cases are non-neg)
   stopifnot(is.numeric(N) && N > 0, is.numeric(gamma) && gamma > 0) # N and gamme +ve
+
+  total_cases  <- sum(cases)
+  attack_rate <- total_cases / N
+
+  if (attack_rate < 0.01)
+    stop("attack rate is expected to be >1%, consider changing attack rate to be greater or N to be smaller to represent a true epidemic")
+  if (attack_rate > 0.5)
+    stop("attack rate is expected to be <50%, consider making attack rate smaller or N larger to represent a true epidemic")
 
   timepoints    <- length(cases) # number of time points in data
   time1 <- time_vec[1L] # first observed time point
@@ -228,9 +238,9 @@ final_estimate_Rt_step <- function(
   S_t <- as.numeric(res_med[S_row, ])
 
   # Rt(t) posterior median and 95% CI
-  Rt_median <- (beta_median_series / gamma) / (S_t * N)
-  Rt_lower  <- (beta_lower_series  / gamma) / (S_t * N)
-  Rt_upper  <- (beta_higher_series  / gamma) / (S_t * N)
+  Rt_median <- (beta_median_series / gamma) * (S_t / N)
+  Rt_lower  <- (beta_lower_series  / gamma) * (S_t / N)
+  Rt_upper  <- (beta_higher_series  / gamma) * (S_t / N)
 
   ## Block-level beta summaries (basically just for return function)
   beta_block_q <- t(apply(beta_blocks_samp, 1, q3))

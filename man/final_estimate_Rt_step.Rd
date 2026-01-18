@@ -22,7 +22,8 @@ Time can start at any integer, we keep it and set time_start to "first time - 1"
 
 \item{N}{Numeric scalar > 0, population size}
 
-\item{gamma}{Numeric scalar > 0, fixed recovery rateR Immunity existing in population, default = 0 - add back in once baseline immunity functionality added!}
+\item{gamma}{Numeric scalar > 0, fixed recovery rate
+R Immunity existing in population, default = 0 - add back in once baseline immunity functionality added!}
 
 \item{beta_breaks}{Integer vector in ORIGINAL time units; mapped to indices internally}
 
