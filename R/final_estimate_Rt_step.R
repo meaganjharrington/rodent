@@ -228,9 +228,9 @@ final_estimate_Rt_step <- function(
   S_t <- as.numeric(res_med[S_row, ])
 
   # Rt(t) posterior median and 95% CI
-  Rt_median <- (beta_median_series * S_t) / (gamma * N)
-  Rt_lower  <- (beta_lower_series  * S_t) / (gamma * N)
-  Rt_upper  <- (beta_higher_series  * S_t) / (gamma * N)
+  Rt_median <- (beta_median_series / gamma) / (S_t * N)
+  Rt_lower  <- (beta_lower_series  / gamma) / (S_t * N)
+  Rt_upper  <- (beta_higher_series  / gamma) / (S_t * N)
 
   ## Block-level beta summaries (basically just for return function)
   beta_block_q <- t(apply(beta_blocks_samp, 1, q3))
