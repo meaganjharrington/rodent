@@ -42,6 +42,4 @@ out <- final_estimate_Rt_step(
 head(out$Rt_series)
 
 out$Rt_plot # print Rt(t) plot over time
-
-#
 ```
