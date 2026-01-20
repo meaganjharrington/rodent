@@ -39,7 +39,9 @@ jobs:
             "pkgdown",
             "odin2",
             "dust2",
-            "monty"
+            "monty",
+            "scales",
+            "ggplot2"
           ))
         shell: Rscript {0}
 
