@@ -1,14 +1,79 @@
+#' Package Workflow Overview
+#'
+#' High-level idea:
+#'   1) Model transmission with an SIR system where β(t) is piecewise-constant
+#'      over user-defined time blocks, γ is fixed, and the initial infectious count I0
+#'      is unknown. R_t is computed as R_t = (β(t) / γ) * S(t) / N
+#'   2) Infer the unknown parameters (β-blocks and I0) by sampling a posterior
+#'      using a random-walk MH sampler. The likelihood is evaluated by integrating
+#'      the SIR system against the observed daily incidence
+#'   3) Propagate posterior uncertainty by simulating S(t) for many posterior
+#'      draws and computing pointwise R_t quantiles
+#'
+#' Model specification
+#' - States: S(t), I(t), R(t) with S + I + R = N.
+#' - Transmission: β(t) = β_k for t in block k (piecewise constant).
+#' - Removal/recovery: fixed γ.
+#' - Initial conditions: I0 unknown (inferred), S0 = N - I0 (no pre-existing immunity
+#'   in the basic version; can be extended to include R0 > 0 if needed).
+#' - Reproduction number:
+#'     R_t = (β(t) / γ) * S(t) / N
+#'
+#' Parameterisation and priors & PRIORS
+#' - Parameter vector: θ = (log β_1, ..., log β_K, log I0).
+#' - Priors:
+#'     * log β_k ~ Normal(mean_beta, sd_beta), independently.
+#'     * Random-walk smoothing prior on successive differences: (log β_k - log β_{k-1})
+#'       ~ Normal(0, rw_sd_beta) for k > 1.
+#'     * log I0 ~ Normal(mean_I0, sd_I0).
+#'
+#' Workflow
+#' 1) Validate inputs
+#' 2) Build β-block structure:
+#'    - Map `beta_breaks` (calendar times) to 1-based indices within `time`.
+#'    - If NULL (i.e. no specified breaks for interventions etc), use a single β for the full time span.
+#' 3) Define the posterior:
+#'    - Likelihood: integrate the SIR system (odin2 -> dust2) with candidate θ, compare
+#'      to observed daily incidence.
+#'    - Posterior log-density: loglikelihood(θ) + logprior(θ).
+#' 4) Sample with MH (monty):
+#'    - Random-walk multivariate normal proposals on the log scale.
+#'    - Proposal covariance: user-supplied or default diagonal with small variance.
+#'    - Burn-in: discard the first fraction of iterations.
+#'    - Diagnostics: extract acceptance rates, traces, and (if exposed) ESS/R-hat.
+#' 5) Posterior summaries:
+#'    - Expand each posterior draw’s β-blocks to a full daily β(t) series.
+#'    - Compute pointwise quantiles (median, 2.5%, 97.5%) for β(t).
+#'    - Summarise I0
+#' 6) Propagate uncertainty to R_t:
+#'    - Draw n_rt_draws samples from the posterior.
+#'    - For each draw, simulate S(t) forward (deterministic system) and compute
+#'      R_t(t) = (β(t) / γ) * S(t) / N.
+#'    - Aggregate across draws to obtain R_t median and 95% credible intervals at each time.
+#' 7) Outputs
+#'
+#'
+#' To-do list:
+#' Fix S_t posteriors  - not currently sampling from the posterior? Must be why Rt intervals are so wide
+#'
 #' Rt(t) with stepwise beta(t), fixed gamma; infer I0 and beta blocks via Metropolis-Hastings random walk MCMC
 #' Using full odin2 -> dust2 -> monty workflow (deterministic likelihood)
+#' log-posterior = loglikelihood + logprior
 #'
 #' @param incidence data.frame with columns: time (consecutive integers), cases >= 0.
-#'        Time can start at any integer, we keep it and set time_start to "first time - 1".
+#' Time can start at any integer, we keep it and set time_start to "first time - 1".
+#'   - time : consecutive integers (any starting value allowed)
+#'   - cases: non-negative integers (daily incidence)
 #' @param N Numeric scalar > 0, population size
 #' @param gamma Numeric scalar > 0, fixed recovery rate
 #' R Immunity existing in population, default = 0 - add back in once baseline immunity functionality added!
 #' @param beta_breaks Integer vector in ORIGINAL time units; mapped to indices internally
-#' @param mcmc List: n_steps (6000), burnin (0.5), proposal (NULL -> diag(0.02^2)), seed (4),
-#'              n_rt_draws (300)
+#' @param mcmc List with settings:
+#'                - n_steps (6000)
+#'                - burnin (0.5)
+#'                - proposal (NULL -> diag(0.02^2))
+#'                - seed (4)
+#'                - n_rt_draws (300) posterior draws for Rt uncertainty bands
 #' @param priors List: mean_beta=log(0.3), sd_beta=0.5, rw_sd_beta=0.2,
 #'               mean_I0=log(10), sd_I0=0.5
 #' @param inits  List: beta=0.3, I0=10
@@ -23,16 +88,18 @@ final_estimate_Rt_step <- function(
     mcmc  = list(n_steps = 6000, burnin = 0.5, proposal = NULL, seed = 4, n_rt_draws = 300),
     # MCMC control settings (definitions): n_steps = , burnin = , proposal = , seed = , n_rt_draws =
     priors = list(mean_beta = log(0.3), sd_beta = 0.5, rw_sd_beta = 0.2,
-                  mean_I0 = log(10), sd_I0 = 0.5), # priors, defined on log scale
+                  mean_I0 = log(5), sd_I0 = 0.1), # priors, defined on log scale # made priors tighter to try and reduce wide CIs earlier in outbreak
     inits  = list(beta = 0.3, I0 = 10) # initial values for MCMC
 ) {
 
 
 
   ## Validate main inputs - error messages
+  # ensure data frame with expected columns
   stopifnot(is.data.frame(incidence), all(c("time","cases") %in% names(incidence))) # incidence should include time and case columns
   stopifnot(all(incidence$cases %% 1 == 0)) # cases as integer!
   cases <- incidence$cases
+  # time must be consecutive integers, but can start anywhere
   time_vec <- as.integer(incidence$time)
   if (!all(diff(time_vec) == 1L))
     stop("`incidence$time` must be consecutive integers.") # time series
@@ -40,8 +107,9 @@ final_estimate_Rt_step <- function(
   stopifnot(is.numeric(N) && N > 0, is.numeric(gamma) && gamma > 0) # N and gamme +ve
 
   total_cases  <- sum(cases)
-  attack_rate <- total_cases / N
+  attack_rate <- total_cases / N # calculate attack rate as logic check, only accepts >1% or <50%
 
+  # current epidemic guardrails with attack rate, calculated from N and total cases in dataset
   if (attack_rate < 0.01)
     stop("attack rate is expected to be >1%, consider changing attack rate to be greater or N to be smaller to represent a true epidemic")
   if (attack_rate > 0.5)
@@ -49,22 +117,26 @@ final_estimate_Rt_step <- function(
 
   timepoints    <- length(cases) # number of time points in data
   time1 <- time_vec[1L] # first observed time point
-  time0 <- time1 - 1 # model start time (dust requirement (?), start time < first obs time)(so we prepend the first beta value)
+  time0 <- time1 - 1 # model start time (dust requirement (?), start time < first obs time)
 
   ## Pull MCMC settings from inputs with backup defaults
   get <- function(x, n, d) if (!is.null(x[[n]])) x[[n]] else d # helper function, pull MCMC settings, with defaults
+
+  # MCMC control
   n_steps     <- get(mcmc, "n_steps", 6000)
   burnin      <- get(mcmc, "burnin", 0.5)
   proposal    <- get(mcmc, "proposal", NULL)
   seed        <- get(mcmc, "seed", 4)
   n_rt_draws  <- get(mcmc, "n_rt_draws", 300)
 
+  # Priors (on log scale)
   mean_beta   <- get(priors, "mean_beta", log(0.3))
   sd_beta     <- get(priors, "sd_beta", 0.5)
   rw_sd_beta  <- get(priors, "rw_sd_beta", 0.2)
   mean_I0     <- get(priors, "mean_I0", log(10))
   sd_I0       <- get(priors, "sd_I0", 0.5)
 
+  # Initial state (not on log scale)
   init_beta   <- get(inits, "beta", 0.3)
   init_I0     <- get(inits, "I0", 10)
 
@@ -73,7 +145,7 @@ final_estimate_Rt_step <- function(
   # if (R >= N) return(-Inf) # sanity check: R < N # add back in once
 
   ## Beta blocks - time periods with constant transmission rate (piecewise constant)
-  ## beta_breaks are supplied in ORIGINAL time units; map to 1-based positions
+  ## beta_breaks are supplied in ORIGINAL time units; map to 1-based indicies
   make_breaks <- function(breaks, time_vec) { # convert calender times into array indicies
     if (!is.null(breaks)) {
       breaks <- sort(unique(as.integer(breaks)))
@@ -91,14 +163,16 @@ final_estimate_Rt_step <- function(
   ends   <- c(starts[-1] - 1L, timepoints) # block k ends just before k+1, etc
   K      <- length(starts) # number of beta blocks
 
+  # Define parameterisation (log)
   ## Parameter vector on log-scale: [log_beta_1....log_beta_K, log_I0]
   par_names <- c(paste0("log_beta_", seq_len(K)), "log_I0") # parameters in MCMC state vector
-  init      <- c(rep(log(init_beta), K), log(init_I0)) # initial MCMC position
+  init      <- c(rep(log(init_beta), K), log(init_I0)) # initial MCMC position on log scale
   if (is.null(proposal)) proposal <- diag(rep(0.05^2, K + 1))
 
   ## Helpers
+  # build full-length beta(t) fromK log-betas
   map_blocks_exp <- function(vals_log, starts, ends, timepoints) {
-    vals <- exp(vals_log);
+    vals <- exp(vals_log); # transform to normal
     out <- numeric(timepoints)
     for (k in seq_along(starts)) out[starts[k]:ends[k]] <- vals[k]
     out
@@ -106,19 +180,24 @@ final_estimate_Rt_step <- function(
   q3 <- function(x) stats::quantile(x, c(0.5, 0.025, 0.975), na.rm = TRUE) # extract median, 95% CI
 
   ## odin2 generator from make_sir_timevary_generator
+  # generator for SIR with time-varying beta
   gen <- make_sir_timevary_generator()
 
   ## Build a dust2 deterministic likelihood
+  # prepare data frame columns for the dust filter
   dust_data <- data.frame(time = time_vec, cases = cases)
+
+  # Create a dust filter object
   filter  <- dust2::dust_filter_create(
     gen,
     data = dust_data,
-    time_start = time0,  # strictly less than first data time
-    dt = 1,
-    n_particles = 1
+    time_start = time0,  # strictly less than first data time (dust2 requirement)
+    dt = 1,       # daily step
+    n_particles = 1 # deterministic, could make stochatic in future
   )
 
   ## Likelihood using dust2
+  # using test theta (vector of unknown model parameters)
   loglikelihood <- function(theta) {
     log_b <- theta[seq_len(K)]
     log_I <- theta[K + 1L]
