@@ -1,31 +1,31 @@
 
 <!-- README.md is generated from README.Rmd. Please edit that file -->
 
-# epievolve package
+# rodent package
 
 <!-- badges: start -->
 
 <!-- badges: end -->
 
-The goal of epievolve is to estimate time-varying Rt(t) using the
+The goal of rodent (Rt+ODEs) is to estimate time-varying Rt(t) using the
 odin-monty framework. Estimates Rt(t) from time series of case counts
 using a mechanistic SIR model. Enables interpretable inference on
 epidemic dynamics and intervention effects.
 
 ## Installation
 
-You can install the development version of epievolve from
+You can install the development version of rodent from
 [GitHub](https://github.com/) with:
 
 ``` r
 # install.packages("devtools")
-devtools::install_github("meaganjharrington/epievolve")
+devtools::install_github("meaganjharrington/rodent")
 ```
 
 ## Example
 
 ``` r
-library(epievolve)
+library(rodent)
 
 df <- read.csv("tests/testthat/incidence.csv", stringsAsFactors = FALSE)
 names(df) <- tolower(names(df))

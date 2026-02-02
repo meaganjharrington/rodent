@@ -1,4 +1,4 @@
-Package: epievolve
+Package: rodent
 Title: Mechanistic Time-Varying Rt(t) Estimation Using Odin-Monty
 Version: 0.0.0.9000
 Authors@R: 

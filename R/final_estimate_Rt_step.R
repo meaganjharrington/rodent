@@ -32,7 +32,7 @@
 #' 2) Build β-block structure:
 #'    - Map `beta_breaks` (calendar times) to 1-based indices within `time`.
 #'    - If NULL (i.e. no specified breaks for interventions etc), use a single β for the full time span.
-#' 3) Define the posterior:
+#' 3) Build the posterior:
 #'    - Likelihood: integrate the SIR system (odin2 -> dust2) with candidate θ, compare
 #'      to observed daily incidence.
 #'    - Posterior log-density: loglikelihood(θ) + logprior(θ).
@@ -106,14 +106,14 @@ final_estimate_Rt_step <- function(
   stopifnot(all(is.finite(time_vec)), all(is.finite(cases)), all(cases >= 0)) # all time and cases are finite (and cases are non-neg)
   stopifnot(is.numeric(N) && N > 0, is.numeric(gamma) && gamma > 0) # N and gamme +ve
 
-  total_cases  <- sum(cases)
-  attack_rate <- total_cases / N # calculate attack rate as logic check, only accepts >1% or <50%
-
-  # current epidemic guardrails with attack rate, calculated from N and total cases in dataset
-  if (attack_rate < 0.01)
-    stop("attack rate is expected to be >1%, consider changing attack rate to be greater or N to be smaller to represent a true epidemic")
-  if (attack_rate > 0.5)
-    stop("attack rate is expected to be <50%, consider making attack rate smaller or N larger to represent a true epidemic")
+# total_cases  <- sum(cases)
+# attack_rate <- total_cases / N # calculate attack rate as logic check, only accepts >1% or <50%
+#
+# # current epidemic guardrails with attack rate, calculated from N and total cases in dataset
+# if (attack_rate < 0.01)
+#   stop("attack rate is expected to be >1%, consider changing attack rate to be greater or N to be smaller to represent a true epidemic")
+# if (attack_rate > 0.5)
+#   stop("attack rate is expected to be <50%, consider making attack rate smaller or N larger to represent a true epidemic")
 
   timepoints    <- length(cases) # number of time points in data
   time1 <- time_vec[1L] # first observed time point
@@ -121,6 +121,8 @@ final_estimate_Rt_step <- function(
 
   ## Pull MCMC settings from inputs with backup defaults
   get <- function(x, n, d) if (!is.null(x[[n]])) x[[n]] else d # helper function, pull MCMC settings, with defaults
+
+  # WARNING value for X isn't provided, Y used as default
 
   # MCMC control
   n_steps     <- get(mcmc, "n_steps", 6000)
@@ -219,6 +221,7 @@ final_estimate_Rt_step <- function(
   }
 
   ## Priors (log-scale)
+  #
   logprior <- function(theta) { # Defines log prior density.
     log_b <- theta[seq_len(K)]; log_I <- theta[K + 1L]
     p_b_ind <- sum(stats::dnorm(log_b, mean = mean_beta, sd = sd_beta, log = TRUE)) #Independent priors on log β blocks
