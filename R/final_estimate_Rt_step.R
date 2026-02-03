@@ -247,11 +247,6 @@ final_estimate_Rt_step <- function(
     dims <- dim(pars); # stores array dimensions
       indices <- (n_burn + 1):dims[2] # indicies of post-burnin iterations
 
-
-  # After extraction
-  dims <- dim(pars)
-  indices <- (n_burn + 1):dims[2]
-
   extract_post <- if (length(dims) == 3) {
     matrix(pars[, indices, 1], nrow = dims[1], ncol = length(indices))
   } else {
