@@ -1,6 +1,15 @@
 #' Build deterministic MCMC object
 #' @keywords internal
-build_mcmc <- function() {
+build_mcmc <- function(
+  density_theta,  # function(theta) -> log posterior
+  par_names,      # character vector of parameter names
+  proposal,       # proposal covariance matrix
+  n_steps,        # total iterations
+  burnin,         # proportion in (0,1) or integer? (here: proportion)
+  seed,           # RNG seed
+  init,        # initial theta vector
+  n_chains = 1    # keep deterministic/single-chain default
+  ) {
 
   ## MCMC via monty (random-walk MH)
   mod <- monty::monty_model(list(density = density_theta, parameters = par_names)) # monty model object (w/ density and pars)(density = log posterior density to sample from)

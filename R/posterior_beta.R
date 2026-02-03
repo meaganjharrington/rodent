@@ -1,35 +1,18 @@
-#' Build deterministic posterior summary object
+#' Expand posterior beta-block draws onto the time grid
 #' @keywords internal
-posterior_beta <- function() {
+posterior_beta <- function(beta_blocks_samp, starts, ends, timepoints) {
+  K        <- nrow(beta_blocks_samp)
+  n_draws  <- ncol(beta_blocks_samp)
 
-  ## Posterior summaries for beta(t) and Rt(t)
+  beta_t_samp <- matrix(NA_real_, nrow = timepoints, ncol = n_draws)
 
-  ## Expand ALL posterior beta draws to time scale
-  ## result: matrix [timepoints x n_draws]
-  beta_t_samp <- apply(
-    beta_blocks_samp,
-    2,
-    function(b) {
-      out <- numeric(timepoints)
-      for (k in seq_len(K))
-        out[starts[k]:ends[k]] <- b[k]
-      out
+  for (j in seq_len(n_draws)) {
+    out <- numeric(timepoints)
+    for (k in seq_len(K)) {
+      out[starts[k]:ends[k]] <- beta_blocks_samp[k, j]
     }
-  )
+    beta_t_samp[, j] <- out
+  }
 
-  ## posterior summaries of beta(t)
-  beta_t_q <- apply(beta_t_samp, 1, q3)
-
-  beta_median_series  <- beta_t_q["50%", ]
-  beta_lower_series   <- beta_t_q["2.5%", ]
-  beta_higher_series  <- beta_t_q["97.5%", ]
-
-  ## Return objects needed downstream
-  list(
-    beta_t_samp         = beta_t_samp,
-    beta_t_q            = beta_t_q,
-    beta_median_series  = beta_median_series,
-    beta_lower_series   = beta_lower_series,
-    beta_higher_series  = beta_higher_series
-  )
+  beta_t_samp
 }

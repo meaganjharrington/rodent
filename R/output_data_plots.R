@@ -1,6 +1,13 @@
 #' Build block-level beta summaries and Rt plot object
 #' @keywords internal
-output_data_plots <- function() {
+output_data_plots <- function(
+    beta_blocks_samp,
+    q3,
+    time_vec,
+    Rt_median,
+    Rt_lower,
+    Rt_upper)
+{
 
   ## Block-level beta summaries (basically just for return function)
   beta_block_q <- t(apply(beta_blocks_samp, 1, q3))

@@ -1,7 +1,15 @@
 #' Build deterministic prior object
 #' @keywords internal
 
-build_prior <- function() {
+build_prior <- function(
+  K,
+  mean_beta,
+  sd_beta,
+  rw_sd_beta,
+  mean_I0,
+  sd_I0,
+  loglik
+  ) {
 
 ## Priors (log-scale)
 #
@@ -15,7 +23,7 @@ logprior <- function(theta) { # Defines log prior density.
 
 ## Posterior
 density_theta <- function(theta)
-  loglikelihood(theta) + logprior(theta) # posterior log density used by monty.
+  loglik(theta) + logprior(theta) # posterior log density used by monty.
 
 ## Return objects needed downstream
 list(

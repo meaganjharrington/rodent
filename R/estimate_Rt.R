@@ -110,7 +110,7 @@
       helpers <- posterior_helpers()
 
       ## 5) Likelihood construction (generator + loglik function)
-      likelihood <- likelihood(
+      likelihood <- likelihood_create(
         time_vec      = inp$time_vec,
         time0         = inp$time0,
         cases         = inp$cases,
@@ -119,6 +119,7 @@
         timepoints    = inp$timepoints,
         N             = N,
         gamma         = gamma,
+        K             = blocks$K,
         map_blocks_exp = helpers$map_blocks_exp
       )
 
@@ -130,29 +131,28 @@
         rw_sd_beta  = inp$rw_sd_beta,
         mean_I0     = inp$mean_I0,
         sd_I0       = inp$sd_I0,
-        loglik      = likelihood$loglik,
-        q3fn        = helpers$q3
+        loglik      = likelihood$loglikelihood
       )
 
       ## 7) MCMC sampling
-      mcmc_res <- run_mcmc(
+      mcmc_res <- build_mcmc(
         density_theta = post$density_theta,
         par_names     = params$par_names,
         proposal      = params$proposal,
         n_steps       = inp$n_steps,
         burnin        = inp$burnin,
         seed          = inp$seed,
-        initial       = params$init
+        init          = params$init
       )
 
       ## 8) Extract post-burnin samples (beta-blocks and I0)
-      extracted <- extract_mcmc_samples(
-        mcmc_raw = mcmc_res$raw,
-        K        = blocks$K
+      extracted <- extract_beta_I0(
+        extract_post = mcmc_res$extract_post,  # was mcmc_res$raw
+        K           = blocks$K
       )
 
       ## 9) Expand beta blocks into daily beta(t)
-      beta_t <- expand_beta_draws(
+      beta_t <- posterior_beta(
         beta_blocks_samp = extracted$beta_blocks_samp,
         starts           = blocks$starts,
         ends             = blocks$ends,
@@ -162,17 +162,17 @@
       ## 10) Summarise posterior beta(t)
       beta_q <- summarise_beta_posterior(
         beta_t = beta_t,
-        q3fun  = helpers$q3
+        q3  = helpers$q3
       )
 
       ## 11) Summarise I0 posterior
-      I0_q <- summarise_I0_posterior(
+      I0_q <- I0_quantiles(
         I0_samp = extracted$I0_samp,
-        q3fun   = helpers$q3
+        q3   = helpers$q3
       )
 
       ## 12) Deterministic S(t) simulation
-      S_t <- simulate_S_deterministic(
+      S_t <- St_sim(
         beta_q   = beta_q,
         I0_q     = I0_q,
         gen      = likelihood$gen,
@@ -183,7 +183,7 @@
       )
 
       ## 13) Compute Rt(t) median + CI
-      Rt_q <- compute_Rt_quantiles(
+      Rt_q <- compute_Rt(
         beta_q = beta_q,
         S_t    = S_t,
         N      = N,
@@ -191,7 +191,7 @@
       )
 
       ## 14) Rt plot + (optional) block-level summaries
-      Rt_outputs <- build_Rt_outputs(
+      Rt_outputs <- output_data_plots(
         beta_blocks_samp = extracted$beta_blocks_samp,
         q3               = helpers$q3,
         time_vec         = inp$time_vec,
@@ -200,7 +200,7 @@
         Rt_upper         = Rt_q$Rt_upper
       )
 
-      ## 15) Final output list (assembly only)
+      ## 15) Final output list (assembly only) # need to code this!!!
       build_output_list(
         extracted   = extracted,
         blocks      = blocks,
