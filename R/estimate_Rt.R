@@ -150,7 +150,6 @@
         extract_post = mcmc_res$extract_post,  # was mcmc_res$raw
         K           = blocks$K
       )
-
       ## 9) Expand beta blocks into daily beta(t)
       beta_t <- posterior_beta(
         beta_blocks_samp = extracted$beta_blocks_samp,
@@ -159,19 +158,19 @@
         timepoints       = inp$timepoints
       )
 
-      ## 10) Summarise posterior beta(t)
+      ## 10) Summarise posterior beta(t) (time series)
       beta_q <- summarise_beta_posterior(
         beta_t = beta_t,
-        q3  = helpers$q3
+        q3     = helpers$q3
       )
 
       ## 11) Summarise I0 posterior
       I0_q <- I0_quantiles(
         I0_samp = extracted$I0_samp,
-        q3   = helpers$q3
+        q3      = helpers$q3
       )
 
-      ## 12) Deterministic S(t) simulation
+      ## 12) Deterministic S(t) simulation (aligned to time_vec)
       S_t <- St_sim(
         beta_q   = beta_q,
         I0_q     = I0_q,
@@ -190,17 +189,16 @@
         gamma  = gamma
       )
 
-      ## 14) Rt plot + (optional) block-level summaries
+      ## 14) Rt plot + series
       Rt_outputs <- output_data_plots(
-        beta_blocks_samp = extracted$beta_blocks_samp,
-        q3               = helpers$q3,
-        time_vec         = inp$time_vec,
-        Rt_median        = Rt_q$Rt_median,
-        Rt_lower         = Rt_q$Rt_lower,
-        Rt_upper         = Rt_q$Rt_upper
+        q3        = helpers$q3,
+        time_vec  = inp$time_vec,
+        Rt_median = Rt_q$Rt_median,
+        Rt_lower  = Rt_q$Rt_lower,
+        Rt_upper  = Rt_q$Rt_upper
       )
 
-      ## 15) Final output list (assembly only) # need to code this!!!
+      ## 15) Final output list
       build_output_list(
         extracted   = extracted,
         blocks      = blocks,
@@ -209,11 +207,10 @@
         S_t         = S_t,
         Rt_q        = Rt_q,
         Rt_plot     = Rt_outputs$Rt_plot,
-        beta_block_q= Rt_outputs$beta_block_q,
         Rt_series   = Rt_outputs$Rt_series,
         inputs      = inp,
         N           = N,
         gamma       = gamma,
         diagnostics = mcmc_res$diagnostics
       )
-    }
+  }

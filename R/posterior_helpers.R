@@ -16,7 +16,12 @@ posterior_helpers <- function() {
     out
   }
 
-  q3 <- function(x) stats::quantile(x, c(0.5, 0.025, 0.975), na.rm = TRUE) # extract median, 95% CI
+  q3 <- function(x) {
+    q <- stats::quantile(x, c(0.025, 0.50, 0.975), na.rm = TRUE)
+    # Ensure stable names and a plain numeric vector
+    names(q) <- c("2.5%", "50%", "97.5%")
+    q
+  } # extract median, 95% CI
 
   ## Return these helpers for use in other modules
   list(
