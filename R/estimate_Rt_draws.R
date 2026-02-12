@@ -92,8 +92,8 @@ estimate_Rt_draws <- function(
     beta_breaks = NULL,
     mcmc  = list(n_steps = 6000, burnin = 0.7, proposal = NULL,
                  seed = 4, n_rt_draws = 1000),
-    priors = list(mean_beta = log(0.3), sd_beta = 0.3, rw_sd_beta = 0.1,
-                  mean_I0 = log(5), sd_I0 = 0.1),
+    priors = list(mean_beta = log(0.3), sd_beta = 0.1, rw_sd_beta = 0.05,
+                  mean_I0 = log(5), sd_I0 = 0.05),
     inits  = list(beta = 0.3, I0 = 10)
 ) {
   ## 1) Validate inputs
